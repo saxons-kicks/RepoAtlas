@@ -1,0 +1,28 @@
+[
+  {
+    "full_name": "octo-org/sample-both",
+    "html_url": "https://github.com/octo-org/sample-both",
+    "description": "A sample test automation utility",
+    "language": "Python",
+    "stargazers_count": 120,
+    "forks_count": 15,
+    "archived": false,
+    "pushed_at": "2026-10-01T12:00:00Z",
+    "updated_at": "2026-10-02T12:00:00Z",
+    "license": {"spdx_id": "MIT"},
+    "topics": ["testing", "automation"]
+  },
+  {
+    "full_name": "octo-org/sample-star-only",
+    "html_url": "https://github.com/octo-org/sample-star-only",
+    "description": "A sample AI agent framework",
+    "language": "TypeScript",
+    "stargazers_count": 350,
+    "forks_count": 40,
+    "archived": false,
+    "pushed_at": "2026-10-03T12:00:00Z",
+    "updated_at": "2026-10-04T12:00:00Z",
+    "license": {"spdx_id": "Apache-2.0"},
+    "topics": ["agents", "llm"]
+  }
+]

@@ -1,0 +1,35 @@
+# Personal catalogs and imported sources — never commit these.
+.repoatlas/
+data/local/
+data/private/
+private/
+*.local.json
+*.private.json
+*.private.csv
+
+# Credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Browser exports and personal GitHub Stars exports
+/bookmarks*.html
+/favorites*.html
+/favoritos*.html
+/stars*.json
+/github-stars*.json
+/*.catalog.json
