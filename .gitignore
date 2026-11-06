@@ -33,3 +33,12 @@ htmlcov/
 /stars*.json
 /github-stars*.json
 /*.catalog.json
+# Common names used for personal browser exports and organized bookmark catalogs
+/atualizado*.html
+/atualizado*.json
+/favoritos*.json
+/favoritos*.csv
+/bookmarks*.json
+/bookmarks*.csv
+/favorites*.json
+/favorites*.csv
