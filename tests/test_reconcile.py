@@ -48,5 +48,64 @@ class ReconcileTests(unittest.TestCase):
         self.assertTrue(catalog[0]["repository_private"])
 
 
+    def test_redirect_alias_is_merged_by_github_repository_id(self):
+        canonical = StarredRepository(
+            full_name="cheaper-inference/omniroute",
+            html_url="https://github.com/cheaper-inference/OmniRoute",
+            repository_id="1157102282",
+            description="AI routing gateway",
+        )
+        redirected = StarredRepository(
+            full_name="cheaper-inference/omniroute",
+            html_url="https://github.com/cheaper-inference/OmniRoute",
+            repository_id="1157102282",
+            aliases=["diegosouzapw/omniroute"],
+            metadata_status="enriched",
+        )
+        bookmarks = [Bookmark("OmniRoute old link", "https://github.com/diegosouzapw/omniroute")]
+        catalog, summary = reconcile(bookmarks, [canonical], compared=True, enriched=[redirected])
+        self.assertEqual(len(catalog), 1)
+        self.assertEqual(catalog[0]["full_name"], "cheaper-inference/omniroute")
+        self.assertEqual(catalog[0]["repository_id"], "1157102282")
+        self.assertEqual(catalog[0]["status"], "both")
+        self.assertEqual(catalog[0]["aliases"], ["diegosouzapw/omniroute"])
+        self.assertEqual(summary["unique_github_repositories_in_bookmarks"], 1)
+        self.assertEqual(summary["canonical_aliases_resolved"], 1)
+
+    def test_fork_relationship_is_preserved(self):
+        fork = StarredRepository(
+            full_name="user/custom-emulator",
+            html_url="https://github.com/user/custom-emulator",
+            repository_id="200",
+            fork=True,
+            parent_repository_id="100",
+            parent_full_name="upstream/emulator",
+            source_repository_id="100",
+            source_full_name="upstream/emulator",
+        )
+        catalog, summary = reconcile([], [fork], compared=True)
+        item = catalog[0]
+        self.assertTrue(item["fork"])
+        self.assertEqual(item["parent_full_name"], "upstream/emulator")
+        self.assertEqual(item["fork_root_full_name"], "upstream/emulator")
+        self.assertEqual(summary["fork_repositories"], 1)
+
+    def test_classifies_qa_and_web_automation_with_tags(self):
+        repo = StarredRepository(
+            full_name="acme/browser-test-kit",
+            html_url="https://github.com/acme/browser-test-kit",
+            repository_id="300",
+            description="Selenium browser automation and end-to-end testing",
+            language="Python",
+            topics=["playwright", "automation"],
+        )
+        catalog, _ = reconcile([], [repo], compared=True)
+        item = catalog[0]
+        self.assertIn("qa-testing", item["categories"])
+        self.assertIn("automation-web", item["categories"])
+        self.assertIn("language:python", item["tags"])
+        self.assertIn("playwright", item["tags"])
+
+
 if __name__ == "__main__":
     unittest.main()

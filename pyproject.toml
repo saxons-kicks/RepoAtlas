@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "repoatlas"
-version = "0.1.0"
-description = "A local-first catalog that reconciles GitHub Stars with browser bookmarks."
+version = "0.2.0"
+description = "A local-first repository intelligence catalog for GitHub Stars and browser bookmarks."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

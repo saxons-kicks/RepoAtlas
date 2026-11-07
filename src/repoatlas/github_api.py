@@ -1,4 +1,4 @@
-"""Read the authenticated user's GitHub Stars without storing credentials."""
+"""Read GitHub Stars and enrich repository metadata without storing credentials."""
 
 from __future__ import annotations
 
@@ -11,10 +11,12 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-from .models import StarredRepository
+from .models import Bookmark, StarredRepository
+from .normalization import github_repo_full_name
 
 API_ROOT = "https://api.github.com"
 API_VERSION = "2026-03-10"
+USER_AGENT = "RepoAtlas/0.2.0"
 
 
 class GitHubAPIError(RuntimeError):
@@ -34,6 +36,20 @@ def _github_token() -> str | None:
         return value or None
     except (FileNotFoundError, subprocess.SubprocessError):
         return None
+
+
+def get_github_token() -> str | None:
+    """Return the runtime token from the environment or GitHub CLI."""
+    return _github_token()
+
+
+def _headers(token: str) -> dict[str, str]:
+    return {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "X-GitHub-Api-Version": API_VERSION,
+        "User-Agent": USER_AGENT,
+    }
 
 
 def _parse_link_header(header: str) -> str | None:
@@ -59,12 +75,25 @@ def _license_spdx(repo: dict[str, Any]) -> str | None:
     return None
 
 
+def _related_repository(repo: dict[str, Any], key: str) -> tuple[str | None, str | None]:
+    related = repo.get(key)
+    if not isinstance(related, dict):
+        return None, None
+    repository_id = related.get("id")
+    full_name = related.get("full_name")
+    return (str(repository_id) if repository_id is not None else None, str(full_name).lower() if full_name else None)
+
+
 def _to_starred(item: dict[str, Any]) -> StarredRepository | None:
     repo, starred_at = _repo_from_star_item(item)
     full_name = repo.get("full_name")
     html_url = repo.get("html_url")
     if not full_name or not html_url:
         return None
+    repository_id = repo.get("id")
+    parent_id, parent_name = _related_repository(repo, "parent")
+    source_id, source_name = _related_repository(repo, "source")
+    owner = repo.get("owner") if isinstance(repo.get("owner"), dict) else {}
     return StarredRepository(
         full_name=str(full_name).lower(),
         html_url=str(html_url),
@@ -79,6 +108,19 @@ def _to_starred(item: dict[str, Any]) -> StarredRepository | None:
         topics=list(repo.get("topics") or []),
         starred_at=starred_at,
         private=bool(repo.get("private", False)),
+        repository_id=str(repository_id) if repository_id is not None else None,
+        created_at=repo.get("created_at"),
+        default_branch=repo.get("default_branch"),
+        visibility=repo.get("visibility") or ("private" if repo.get("private") else "public"),
+        fork=bool(repo.get("fork", False)),
+        parent_repository_id=parent_id,
+        parent_full_name=parent_name,
+        source_repository_id=source_id,
+        source_full_name=source_name,
+        homepage=repo.get("homepage") or None,
+        open_issues_count=repo.get("open_issues_count"),
+        watchers_count=repo.get("watchers_count"),
+        disabled=bool(repo.get("disabled", False)),
     )
 
 
@@ -107,12 +149,8 @@ def fetch_user_stars(token: str | None = None) -> list[StarredRepository]:
         )
 
     url: str | None = f"{API_ROOT}/user/starred?per_page=100&sort=created&direction=desc"
-    headers = {
-        "Accept": "application/vnd.github.star+json",
-        "Authorization": f"Bearer {auth}",
-        "X-GitHub-Api-Version": API_VERSION,
-        "User-Agent": "RepoAtlas/0.1.0",
-    }
+    headers = _headers(auth)
+    headers["Accept"] = "application/vnd.github.star+json"
     results: list[StarredRepository] = []
     while url:
         request = urllib.request.Request(url, headers=headers)
@@ -136,9 +174,80 @@ def fetch_user_stars(token: str | None = None) -> list[StarredRepository]:
             if isinstance(item, dict):
                 repo = _to_starred(item)
                 if repo:
+                    repo.metadata_status = "star_imported"
                     results.append(repo)
         url = next_url
     return results
+
+
+def fetch_repository_metadata(full_name: str, token: str | None = None) -> tuple[StarredRepository | None, str, str | None]:
+    """Fetch one repository. urllib follows GitHub rename/transfer redirects."""
+    auth = token or _github_token()
+    if not auth:
+        return None, "auth_missing", "Autenticação GitHub não encontrada."
+    requested = (full_name or "").strip().strip("/")
+    if not requested or len(requested.split("/")) != 2:
+        return None, "invalid_name", "Identificador owner/repo inválido."
+
+    encoded = urllib.parse.quote(requested, safe="/")
+    request = urllib.request.Request(f"{API_ROOT}/repos/{encoded}", headers=_headers(auth))
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:300]
+        if exc.code == 404:
+            return None, "not_found", "HTTP 404: repositório não encontrado ou sem acesso."
+        if exc.code in {403, 429}:
+            status = "rate_limited" if "rate limit" in detail.casefold() or exc.code == 429 else "forbidden"
+            return None, status, f"HTTP {exc.code}: {detail}"
+        if exc.code in {410, 451}:
+            return None, "unavailable", f"HTTP {exc.code}: {detail}"
+        return None, "error", f"HTTP {exc.code}: {detail}"
+    except urllib.error.URLError as exc:
+        return None, "error", str(exc.reason)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return None, "error", f"Resposta inválida do GitHub: {exc}"
+
+    if not isinstance(payload, dict):
+        return None, "error", "Resposta inesperada ao consultar o repositório."
+    repository = _to_starred(payload)
+    if repository is None:
+        return None, "error", "O GitHub não retornou full_name e html_url."
+
+    canonical_name = repository.full_name.lower()
+    requested_name = requested.lower()
+    repository.aliases = [requested_name] if requested_name != canonical_name else []
+    repository.metadata_status = "enriched"
+    return repository, "enriched", None
+
+
+def enrich_bookmark_repositories(
+    bookmarks: list[Bookmark],
+    stars: list[StarredRepository],
+    token: str | None = None,
+) -> tuple[list[StarredRepository], dict[str, dict[str, str | None]]]:
+    """Enrich unique bookmark-only names and resolve aliases by GitHub repository ID."""
+    known_names = {repo.full_name.lower() for repo in stars}
+    known_names.update(alias.lower() for repo in stars for alias in repo.aliases)
+    candidates = sorted({
+        name for bookmark in bookmarks
+        if (name := github_repo_full_name(bookmark.url)) and name not in known_names
+    })
+
+    enriched: list[StarredRepository] = []
+    lookup_results: dict[str, dict[str, str | None]] = {}
+    for requested_name in candidates:
+        repository, status, error = fetch_repository_metadata(requested_name, token=token)
+        lookup_results[requested_name] = {
+            "status": status,
+            "repository_id": repository.repository_id if repository else None,
+            "resolved_full_name": repository.full_name if repository else None,
+            "error": error,
+        }
+        if repository:
+            enriched.append(repository)
+    return enriched, lookup_results
 
 
 def load_stars(stars_json: str | None = None, use_github: bool = False) -> list[StarredRepository]:

@@ -8,7 +8,13 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .github_api import GitHubAPIError, load_stars
+from .github_api import (
+    GitHubAPIError,
+    enrich_bookmark_repositories,
+    fetch_user_stars,
+    get_github_token,
+    load_stars,
+)
 from .outputs import export_public_catalog, write_outputs
 from .parsers import load_bookmarks
 from .reconcile import reconcile
@@ -28,6 +34,11 @@ def _parser() -> argparse.ArgumentParser:
     source.add_argument("--github", action="store_true", help="Fetch all GitHub Stars using GitHub API and local auth.")
     source.add_argument("--stars-json", help="Import a JSON export of GitHub Stars instead of calling the API.")
     source.add_argument("--bookmarks-only", action="store_true", help="Build the catalog without comparing Stars yet.")
+    sync.add_argument(
+        "--no-enrich-bookmarks",
+        action="store_true",
+        help="Skip GitHub metadata lookups for bookmark-only repositories (used with --github).",
+    )
     sync.add_argument("--output", default=".repoatlas", help="Local output directory (default: .repoatlas).")
 
     public = commands.add_parser("export-public", help="Export catalog JSON excluding private bookmark contexts.")
@@ -39,15 +50,31 @@ def _parser() -> argparse.ArgumentParser:
 
 def run_sync(args: argparse.Namespace) -> int:
     bookmarks = load_bookmarks(args.bookmarks)
+    enriched = []
+    lookup_results = {}
     if args.bookmarks_only:
         stars = []
         compared = False
         stars_source = "not imported"
-    else:
-        stars = load_stars(stars_json=args.stars_json, use_github=args.github)
+    elif args.github:
+        token = get_github_token()
+        stars = fetch_user_stars(token=token)
+        if not args.no_enrich_bookmarks:
+            enriched, lookup_results = enrich_bookmark_repositories(bookmarks, stars, token=token)
         compared = True
-        stars_source = "GitHub REST API" if args.github else str(args.stars_json)
-    catalog, summary = reconcile(bookmarks, stars, compared=compared)
+        stars_source = "GitHub REST API"
+    else:
+        stars = load_stars(stars_json=args.stars_json)
+        compared = True
+        stars_source = str(args.stars_json)
+
+    catalog, summary = reconcile(
+        bookmarks,
+        stars,
+        compared=compared,
+        enriched=enriched,
+        lookup_results=lookup_results,
+    )
     files = write_outputs(args.output, catalog, summary, str(Path(args.bookmarks)), stars_source)
     print("RepoAtlas · sincronização concluída")
     print(f"Favoritos lidos: {summary['total_bookmarks']}")
@@ -60,6 +87,15 @@ def run_sync(args: argparse.Namespace) -> int:
         print(f"Somente favoritos: {summary['bookmark_only']}")
     else:
         print("Comparação pendente: execute novamente com --github ou --stars-json.")
+    if args.github and not args.no_enrich_bookmarks:
+        print(f"Aliases/redirecionamentos unificados: {summary['canonical_aliases_resolved']}")
+        print(
+            "Metadados de favoritos consultados: "
+            f"{summary['metadata_enriched']}/{summary['metadata_enrichment_attempted']}"
+        )
+        print(f"Consultas sem metadados: {summary['metadata_unavailable']}")
+    print(f"Repositórios identificados por ID do GitHub: {summary['repositories_with_github_id']}")
+    print(f"Forks identificados: {summary['fork_repositories']}")
     print("\nArquivos gerados:")
     for kind, path in files.items():
         print(f"  {kind}: {path}")
