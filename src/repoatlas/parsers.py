@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -13,11 +14,15 @@ _ROOT_FOLDERS = {
     "bookmarks bar", "bar bookmarks", "barra de favoritos", "barra de marcadores",
     "other bookmarks", "outros favoritos", "favoritos", "bookmarks",
 }
-_PRIVATE_FOLDER_TOKENS = {"trabalho", "work", "interno", "internal", "corporativo", "corporate"}
+_PRIVATE_FOLDER_PATTERN = re.compile(
+    r"(?<!\w)(?:trabalho|work|interno|internal|corporativo|corporate)(?!\w)",
+    re.IGNORECASE,
+)
 
 
 def _private_path(path: list[str]) -> bool:
-    return any(any(token in folder.casefold() for token in _PRIVATE_FOLDER_TOKENS) for folder in path)
+    """Detect private-context folders using whole words, not substrings."""
+    return any(_PRIVATE_FOLDER_PATTERN.search(folder) for folder in path)
 
 
 class _NetscapeBookmarksParser(HTMLParser):

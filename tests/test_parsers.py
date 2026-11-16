@@ -31,5 +31,34 @@ class ParserTests(unittest.TestCase):
         self.assertTrue(items[0].private_context)
 
 
+    def test_frameworks_folder_is_not_mistaken_for_private_work_context(self):
+        source = {
+            "bookmarks": [{
+                "title": "Frameworks & Agents",
+                "url": "https://github.com/example/frameworks",
+                "organized_path": ["Tecnologia", "Frameworks & Agentes"],
+            }]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bookmarks.json"
+            path.write_text(json.dumps(source), encoding="utf-8")
+            items = load_bookmarks(path)
+        self.assertFalse(items[0].private_context)
+
+    def test_work_folder_is_marked_private_as_a_whole_word(self):
+        source = {
+            "bookmarks": [{
+                "title": "Work repository",
+                "url": "https://github.com/example/work-repo",
+                "organized_path": ["My Work", "Projects"],
+            }]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bookmarks.json"
+            path.write_text(json.dumps(source), encoding="utf-8")
+            items = load_bookmarks(path)
+        self.assertTrue(items[0].private_context)
+
+
 if __name__ == "__main__":
     unittest.main()
