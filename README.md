@@ -39,7 +39,7 @@ winget install --id GitHub.cli
 gh auth login
 
 # 3. Clone the repository and enter the project folder
-git clone https://github.com/mateussmeneses/RepoAtlas.git
+git clone https://github.com/saxons-kicks/RepoAtlas.git
 cd RepoAtlas
 
 # 4. Create and activate an isolated Python environment

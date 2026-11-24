@@ -16,7 +16,7 @@ git status --short
 
 ```powershell
 git commit -m "chore: initial RepoAtlas project"
-git remote add origin https://github.com/mateussmeneses/RepoAtlas.git
+git remote add origin https://github.com/saxons-kicks/RepoAtlas.git
 git push -u origin main
 ```
 
